@@ -4,7 +4,8 @@ disable_existing_loggers: False
 loggers:
   "":
     level: INFO
-    handlers: [fileHandler]
+    #handlers: [fileHandler]
+    handlers: [console]
   __main__:
     level: DEBUG
 
@@ -17,6 +18,10 @@ handlers:
     backupCount: 30
     encoding: utf-8
     filename: log/set_win_pos.log
+  console:
+    level: DEBUG
+    formatter: simpleFormatter
+    class: logging.StreamHandler
 
 formatters:
   simpleFormatter:
