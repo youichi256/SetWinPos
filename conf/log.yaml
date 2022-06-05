@@ -4,8 +4,7 @@ disable_existing_loggers: False
 loggers:
   "":
     level: INFO
-    #handlers: [fileHandler]
-    handlers: [ console ]
+    handlers: [ console ,fileHandler ]
   __main__:
     level: DEBUG
 
