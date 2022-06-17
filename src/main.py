@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """ウィンドウの位置を設定に従って調整"""
 import logging.config
-from typing import List
+import re
+from argparse import ArgumentParser
+from logging import Logger
+from typing import List, Dict, Any
 
 import pywintypes
 import win32api
@@ -15,74 +18,194 @@ import windll_shcore
 
 
 class SetWinPos:
-    logger = None
-
     def __init__(self):
-        self.init_log()
+        self.logger = self.init_log()
+        self.display_primary = -1
+        self.display: List[Dict[str, int]] = []
+        self.winset: Dict[str, Dict[str, Any]] = {}
 
     def main(self) -> None:
         self.logger.info("start")
-        self.get_window_list()
+        # self.argparse()
+        self.set_dpi_awareness()
+        self.get_display_info()
+        self.load_setlist()
+        self.set_window_pos()
 
-    def get_window_list(self):
+    @staticmethod
+    def argparse():
+        parser = ArgumentParser(description="ウィンドウ位置の調整")
+        parser.add_argument("mode", choices=["list", "set"], help="list:ウィンドウ情報リスト, set:ウィンドウ座標設定")
+        parser.add_argument("echo", help="eeee")
+        args = parser.parse_args()
+        print(args.echo)
+
+    @staticmethod
+    def set_dpi_awareness():
+        # 高DPIでもオリジナルの座標で扱う
         windll_shcore.SetProcessDpiAwareness(windll_shcore.PROCESS_PER_MONITOR_DPI_AWARE)
 
-        def ttt(hwnd: int, handles: List[int]) -> bool:
-            title: str = win32gui.GetWindowText(hwnd)
-            clazz: str = win32gui.GetClassName(hwnd)
-            # if name.startswith("neptune"):
-            # if title.startswith("SetWinPos"):
-            _tid, pid = win32process.GetWindowThreadProcessId(hwnd)
-            try:
-                process = win32api.OpenProcess(win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ, False,
-                                               pid)
-            except pywintypes.error:  # noqa
-                return True
-            filename: str = win32process.GetModuleFileNameEx(process, 0)
-            win32api.CloseHandle(process)
-            # if filename.endswith("\\ttermpro.exe"):
-            # if filename.endswith("\\pycharm64.exe"):
-            if filename.endswith("\\Code.exe"):
-                ss = win32gui.GetWindow(hwnd, win32con. GW_HWNDPREV)
-                self.logger.info(ss)
-
-                handles.append(hwnd)
-
-                self.logger.debug(f"hwnd=0x{hwnd:08x},pid={pid:5d},title={title},class={clazz},filename={filename}")
-                rect1 = win32gui.GetWindowRect(hwnd)
-                self.logger.info("rect1:left=%d,top=%d,right=%d,bottom=%d", rect1[0], rect1[1], rect1[2], rect1[3])
-                rect2 = windll_dwmapi.DwmGetWindowAttribute(hwnd, windll_dwmapi.DWMWA_EXTENDED_FRAME_BOUNDS)
-                self.logger.info("rect2:left=%d,top=%d,right=%d,bottom=%d", rect2.left, rect2.top, rect2.right,
-                                 rect2.bottom)
-            return True
-
-        window_handles = []
-        win32gui.EnumWindows(ttt, window_handles)
-        self.logger.info("hwnd=%08x", window_handles[0])
-
-        # DwmSetWindowAttribute()での設定がうまく出来ないため、SetWindowPos()で代用する。
-        # TODO: 拡大率が整数でないときに端数がおかしくなる？
-        win32gui.SetWindowPos(window_handles[0], 0, 1610, 0, 3840 - 1610 + 11, 2114 + 11,
-                              win32con.SWP_NOACTIVATE | win32con.SWP_NOZORDER)
-
-        cx = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
-        cy = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
-        self.logger.info("metrics:cx=%d,cy=%d", cx, cy)
-
-        for mon, _, _ in win32api.EnumDisplayMonitors():
-            self.logger.info(f"mon={mon.handle}")
+    def get_display_info(self):
+        for mon, m2, m3 in win32api.EnumDisplayMonitors():
+            # self.logger.info(f"mon={mon.__dir__()}")
+            # self.logger.info(f"m2={m2.__dir__()}")
+            # self.logger.info(f"m3={m3.__dir__()}")
+            # print(m3.index)
+            # print(m3.count)
+            # self.logger.info(f"mon={mon.handle}")
             info = win32api.GetMonitorInfo(mon.handle)
-            self.logger.info(f"info={info['Work']}")
+            # self.logger.debug(f"info={info['Work']}")
+            if info["Flags"] == 1:
+                self.display_primary = len(self.display)
+            self.display.append({
+                "left": info["Work"][0],
+                "top": info["Work"][1],
+                "right": info["Work"][2],
+                "bottom": info["Work"][3],
+                "dpi": windll_shcore.GetDpiForMonitor(mon.handle, windll_shcore.MDT_EFFECTIVE_DPI)["x"],
+            })
+            # self.logger.debug(info)
+            # print(windll_shcore.GetDpiForMonitor(mon.handle, windll_shcore.MDT_EFFECTIVE_DPI))
+        self.logger.debug(self.display)
 
-    def init_log(self):
+    def load_setlist(self):
+        try:
+            with open("conf/setlist.yaml", "r", encoding="utf-8") as fh_yaml:
+                data: Dict[str, Dict[str, str]] = yaml.load(fh_yaml, Loader=yaml.FullLoader)
+        except FileNotFoundError as err:
+            raise err
+        if not isinstance(data, dict):
+            raise TypeError("setlistの構造が不正(all)")
+        for name in data:
+            data_name = data[name]
+            if not isinstance(data_name, dict):
+                raise TypeError(f"setlistの構造が不正({name})")
+            filename = ""
+            rect: Dict[str, int] = {}
+            for key in data_name:
+                data_key = data_name[key]
+                if key == "filename":
+                    if not isinstance(data_key, str):
+                        raise TypeError(f"setlistの値が不正({name},{key})")
+                    filename = data_key
+                elif key == "title":
+                    if not isinstance(data_key, str):
+                        raise TypeError(f"setlistの値が不正({name},{key})")
+                    # TODO: 未対応
+                elif key == "display":
+                    if not isinstance(data_key, int):
+                        raise TypeError(f"setlistの値が不正({name},{key})")
+                    # TODO: 未対応
+                elif key in ["left", "top", "right", "bottom"]:
+                    if isinstance(data_key, int):
+                        rect[key] = data_key
+                    elif isinstance(data_key, str):
+                        match = re.search("^([0-9]+)%$", data_key)  # noqa
+                        par = int(match.group(1))
+                        if par > 100:
+                            raise TypeError(f"setlistの値が不正({name},{key})")
+                        rect[key] = int(self.display[self.display_primary][key] * 100 / 100)
+                    else:
+                        raise TypeError(f"setlistの値が不正({name},{key})")
+                else:
+                    raise TypeError(f"setlistのキーが不正({name},{key})")
+            if filename == "":
+                raise TypeError(f"setlistの値が未設定({name},filename)")
+            for key in ["left", "top", "right", "bottom"]:
+                if key not in rect:
+                    raise TypeError(f"setlistの値が未設定({name},{key})")
+            self.winset[name] = {
+                "filename": filename,
+                # "title": "",
+                # "display": 0,
+            }
+            self.winset[name].update(rect)
+        self.logger.debug(self.winset)
+
+    def set_window_pos(self) -> None:
+        """
+        ウィンドウ座標設定
+
+        :return: なし
+        """
+
+        # ee = win32print.EnumMonitors(None, 2)
+        # print(ee)
+        # # for idx in range(0, 4):
+        #     disp0 = win32api.EnumDisplayDevices(None, idx)
+        #     print("-----")
+        #     print(f"display:{idx}")
+        #     print(disp0.Size)
+        #     print(disp0.DeviceName)
+        #     print(disp0.DeviceString)
+        #     print(disp0.StateFlags)
+        #     print(disp0.DeviceID)
+        #     print(disp0.DeviceKey)
+        #     print(disp0.__dir__())
+
+        win32gui.EnumWindows(self.callback_enumwindows, None)
+
+        # cx = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
+        # cy = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
+        # self.logger.info("metrics:cx=%d,cy=%d", cx, cy)
+
+    def callback_enumwindows(self, hwnd: int, _) -> bool:
+        title: str = win32gui.GetWindowText(hwnd)
+        _tid, pid = win32process.GetWindowThreadProcessId(hwnd)
+        try:
+            process = win32api.OpenProcess(win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ, False,
+                                           pid)
+        except pywintypes.error:  # noqa
+            return True
+        filename: str = win32process.GetModuleFileNameEx(process, 0)
+        win_visible = win32gui.IsWindowVisible(hwnd)
+        win32api.CloseHandle(process)
+        if win_visible == 1:
+            for name, winset in self.winset.items():
+                if filename.endswith("\\" + winset["filename"]):
+                    # ss = win32gui.GetWindow(hwnd, win32con.GW_HWNDPREV)
+                    # self.logger.info(ss)
+
+                    self.logger.debug(
+                        f"hwnd=0x{hwnd:08x},pid={pid:5d},title={title},filename={filename}")
+                    rect1: List[int] = win32gui.GetWindowRect(hwnd)
+                    # self.logger.debug("rect1:left=%d,top=%d,right=%d,bottom=%d",
+                    #                   rect1[0], rect1[1], rect1[2], rect1[3])
+                    rect2 = windll_dwmapi.DwmGetWindowAttribute(hwnd, windll_dwmapi.DWMWA_EXTENDED_FRAME_BOUNDS)
+                    # self.logger.debug("rect2:left=%d,top=%d,right=%d,bottom=%d",
+                    #                   rect2.left, rect2.top, rect2.right, rect2.bottom)
+                    margin_left = int(str(rect2.left)) - rect1[0]
+                    margin_top = int(str(rect2.top)) - rect1[1]
+                    margin_right = rect1[2] - int(str(rect2.right)) + margin_left
+                    margin_bottom = rect1[3] - int(str(rect2.bottom)) + margin_top
+                    dpi = self.display[self.display_primary]["dpi"]
+                    if dpi % 96 >= 48 and margin_right > 0:
+                        margin_right = margin_right + 1
+                        margin_bottom = margin_bottom + 1
+
+                    # TODO: 拡大率が整数でないときに端数がおかしくなる？
+                    self.logger.info("set:0x%08x,%s", hwnd, name)
+                    win32gui.SetWindowPos(
+                        hwnd, 0,
+                        winset["left"] - margin_left,
+                        winset["top"] - margin_top,
+                        winset["right"] - winset["left"] + margin_right,
+                        winset["bottom"] - winset["top"] + margin_bottom,
+                        win32con.SWP_NOACTIVATE | win32con.SWP_NOZORDER)
+
+        return True
+
+    @staticmethod
+    def init_log() -> Logger:
         try:
             with open("conf/log.yaml", "r", encoding="utf-8") as fh_yaml:
                 data = yaml.load(fh_yaml, Loader=yaml.FullLoader)
         except FileNotFoundError as err:
             raise err
         logging.config.dictConfig(data)
-        self.logger = logging.getLogger(__name__)
+        return logging.getLogger(__name__)
 
 
 if __name__ == "__main__":
+    # chdir()  # TODO: 要調整
     SetWinPos().main()
