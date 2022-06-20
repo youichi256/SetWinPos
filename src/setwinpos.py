@@ -36,10 +36,10 @@ class SetWinPos:
         arg = self.argparse()
         self.logger.info("start")
         self.set_dpi_awareness()
+        self.get_display_info()
         if arg.mode == "list":
             self.get_window_pos()
         if arg.mode == "set":
-            self.get_display_info()
             self.load_setlist()
             self.set_window_pos()
 
@@ -196,9 +196,10 @@ class SetWinPos:
         except pywintypes.error:  # noqa
             return True
         filename: str = win32process.GetModuleFileNameEx(process, 0)
-        win_visible = win32gui.IsWindowVisible(hwnd)
         win32api.CloseHandle(process)
-        if win_visible == 1:
+        win_visible = win32gui.IsWindowVisible(hwnd)
+        place = win32gui.GetWindowPlacement(hwnd)
+        if win_visible == 1 and place[1] == win32con.SW_SHOWNORMAL:
             rect1: List[int] = win32gui.GetWindowRect(hwnd)
             # self.logger.debug("rect1:left=%d,top=%d,right=%d,bottom=%d",
             #                   rect1[0], rect1[1], rect1[2], rect1[3])
@@ -210,10 +211,10 @@ class SetWinPos:
             margin_right = rect1[2] - int(str(rect2.right)) + margin_left
             margin_bottom = rect1[3] - int(str(rect2.bottom)) + margin_top
             dpi = self.display[self.display_primary]["dpi"]
-            if dpi % 96 >= 48 and margin_right > 0:
-                # 拡大率が整数でないときの端数調整
-                margin_right = margin_right + 1
-                margin_bottom = margin_bottom + 1
+            # if dpi % 96 >= 48 and margin_right > 0:
+            #     # 拡大率が整数でないときの端数調整
+            #     margin_right = margin_right + 1
+            #     margin_bottom = margin_bottom + 1
             if is_set:
                 for name, winset in self.winset.items():
                     if filename.endswith("\\" + winset["filename"]):
@@ -233,7 +234,8 @@ class SetWinPos:
                             win32con.SWP_NOACTIVATE | win32con.SWP_NOZORDER)
             else:
                 self.logger.debug(
-                    "hwnd=0x%08x,pid=%05d,title=%s,class=%s,filename=%s", hwnd, pid, title, clazz, filename)
+                    "hwnd=0x%08x,pid=%5d,left=%4d,top=%4d,right=%4d,bottom=%4d,title=%s,class=%s,filename=%s",
+                    hwnd, pid, rect2.left, rect2.top, rect2.right, rect2.bottom, title, clazz, filename)
 
         return True
 
