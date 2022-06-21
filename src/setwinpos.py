@@ -109,7 +109,10 @@ class SetWinPos:
             data_name = data[name]
             if not isinstance(data_name, dict):
                 raise TypeError(f"setlistの構造が不正({name})")
-            filename = ""
+            set_title = ""
+            set_class = ""
+            set_filename = ""
+            set_display = -1
             rect: Dict[str, int] = {}
             for key in data_name:
                 data_key = data_name[key]
@@ -120,11 +123,11 @@ class SetWinPos:
                 elif key == "class":
                     if not isinstance(data_key, str):
                         raise TypeError(f"setlistの値が不正({name},{key})")
-                    # TODO: 未対応
+                    set_class = data_key
                 elif key == "filename":
                     if not isinstance(data_key, str):
                         raise TypeError(f"setlistの値が不正({name},{key})")
-                    filename = data_key
+                    set_filename = data_key
                 elif key == "display":
                     if not isinstance(data_key, int):
                         raise TypeError(f"setlistの値が不正({name},{key})")
@@ -142,7 +145,7 @@ class SetWinPos:
                         raise TypeError(f"setlistの値が不正({name},{key})")
                 else:
                     raise TypeError(f"setlistのキーが不正({name},{key})")
-            if filename == "":
+            if set_filename == "":
                 raise TypeError(f"setlistの値が未設定({name},filename)")
             for key in ["left", "top", "right", "bottom"]:
                 if key not in rect:
@@ -152,9 +155,10 @@ class SetWinPos:
             if rect["bottom"] < rect["top"]:
                 raise TypeError(f"bottomがtopより小さい({name})")
             self.winset[name] = {
-                "filename": filename,
-                # "title": "",
-                # "display": 0,
+                "title": set_title,
+                "class": set_class,
+                "filename": set_filename,
+                "display": set_display,
             }
             self.winset[name].update(rect)
         self.logger.debug(self.winset)
@@ -211,27 +215,29 @@ class SetWinPos:
             margin_right = rect1[2] - int(str(rect2.right)) + margin_left
             margin_bottom = rect1[3] - int(str(rect2.bottom)) + margin_top
             dpi = self.display[self.display_primary]["dpi"]
-            # if dpi % 96 >= 48 and margin_right > 0:
-            #     # 拡大率が整数でないときの端数調整
-            #     margin_right = margin_right + 1
-            #     margin_bottom = margin_bottom + 1
+            if dpi % 96 >= 48 and margin_right > 0:
+                # 拡大率が整数でないときの端数調整
+                margin_right = margin_right + 1
+                margin_bottom = margin_bottom + 1
             if is_set:
                 for name, winset in self.winset.items():
-                    if filename.endswith("\\" + winset["filename"]):
-                        # ss = win32gui.GetWindow(hwnd, win32con.GW_HWNDPREV)
-                        # self.logger.info(ss)
+                    if winset["class"] != "" and clazz != winset["class"]:
+                        continue
+                    if not filename.endswith("\\" + winset["filename"]):
+                        continue
+                    # ss = win32gui.GetWindow(hwnd, win32con.GW_HWNDPREV)
+                    # self.logger.info(ss)
 
-                        self.logger.debug(
-                            "hwnd=0x%08x,pid=%05d,title=%s,filename=%s", hwnd, pid, title, filename)
+                    set_x = winset["left"] - margin_left
+                    set_y = winset["top"] - margin_top
+                    set_w = winset["right"] - winset["left"] + margin_right
+                    set_h = winset["bottom"] - winset["top"] + margin_bottom
 
-                        self.logger.info("set:0x%08x,%s", hwnd, name)
-                        win32gui.SetWindowPos(
-                            hwnd, 0,
-                            winset["left"] - margin_left,
-                            winset["top"] - margin_top,
-                            winset["right"] - winset["left"] + margin_right,
-                            winset["bottom"] - winset["top"] + margin_bottom,
-                            win32con.SWP_NOACTIVATE | win32con.SWP_NOZORDER)
+                    self.logger.debug(
+                        "hwnd=0x%08x,pid=%05d,title=%s,filename=%s", hwnd, pid, title, filename)
+                    self.logger.info("set:0x%08x,x=%4d,y=%4d,w=%4d,h=%4d,%s", hwnd, set_x, set_y, set_w, set_h, name)
+                    win32gui.SetWindowPos(
+                        hwnd, 0, set_x, set_y, set_w, set_h, win32con.SWP_NOACTIVATE | win32con.SWP_NOZORDER)
             else:
                 self.logger.debug(
                     "hwnd=0x%08x,pid=%5d,left=%4d,top=%4d,right=%4d,bottom=%4d,title=%s,class=%s,filename=%s",
