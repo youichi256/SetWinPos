@@ -13,8 +13,8 @@ handlers:
     level: DEBUG
     formatter: simpleFormatter
     class: logging.handlers.TimedRotatingFileHandler
-    when: D
-    backupCount: 30
+    when: midnight
+    backupCount: 180
     encoding: utf-8
     filename: log/set_win_pos.log
   console:

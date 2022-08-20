@@ -1,0 +1,20 @@
+[MESSAGES CONTROL]
+# C0302: Too many lines in module (1910/1000) (too-many-lines)
+# I1101: c-extension-no-member
+# R0201: Method could be a function (no-self-use)
+# R0903: Too few public methods (1/2) (too-few-public-methods)
+# R0904: Too many public methods (51/40) (too-many-public-methods)
+# W0511: ＴＯＤＯ: (ＴＯＤＯ検索に引っかからないように大文字にしている）
+#disable=C0302,R0903,R0904,W0511
+disable=I1101
+
+[FORMAT]
+max-line-length=160
+
+[SIMILARITIES]
+max-args = 6
+max-branches = 25
+max-locals = 35
+max-nested-blocks = 6
+max-statements = 80
+min-similarity-lines=10

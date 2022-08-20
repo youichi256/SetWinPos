@@ -75,29 +75,39 @@ class SetWinPos:
         win32gui.EnumWindows(self.callback_enumwindows, False)
 
     def get_display_info(self) -> None:
-        for mon, m2, m3 in win32api.EnumDisplayMonitors():
+        """
+        ディスプレイ情報取得
+
+        :return: なし
+        """
+        for mon, _m2, _m3 in win32api.EnumDisplayMonitors():
             # self.logger.info(f"mon={mon.__dir__()}")
             # self.logger.info(f"m2={m2.__dir__()}")
             # self.logger.info(f"m3={m3.__dir__()}")
-            # print(m3.index)
-            # print(m3.count)
+            # print(_m3.index)
+            # print(_m3.count)
             # self.logger.info(f"mon={mon.handle}")
             info = win32api.GetMonitorInfo(mon.handle)
-            # self.logger.debug(f"info={info['Work']}")
+            dpi = windll_shcore.GetDpiForMonitor(mon.handle, windll_shcore.MDT_EFFECTIVE_DPI)["x"]
+            # self.logger.debug("info=%s", info)
+            self.logger.debug("display=%d,primary=%d,left=%5d,top=%5d,right=%5d,bottom=%5d,dpi=%3d",
+                              len(self.display) + 1,
+                              info["Flags"], info["Work"][0], info["Work"][1], info["Work"][2], info["Work"][3], dpi)
             if info["Flags"] == 1:
                 self.display_primary = len(self.display)
-            self.display.append({
-                "left": info["Work"][0],
-                "top": info["Work"][1],
-                "right": info["Work"][2],
-                "bottom": info["Work"][3],
-                "dpi": windll_shcore.GetDpiForMonitor(mon.handle, windll_shcore.MDT_EFFECTIVE_DPI)["x"],
-            })
+            self.display.append(
+                {"left": info["Work"][0], "top": info["Work"][1], "right": info["Work"][2], "bottom": info["Work"][3],
+                 "dpi": dpi})
             # self.logger.debug(info)
             # print(windll_shcore.GetDpiForMonitor(mon.handle, windll_shcore.MDT_EFFECTIVE_DPI))
-        self.logger.debug(self.display)
+        # self.logger.debug(self.display)
 
-    def load_setlist(self):
+    def load_setlist(self) -> None:
+        """
+        設定読み込み
+
+        :return: なし
+        """
         try:
             with open("conf/setlist.yaml", "r", encoding="utf-8") as fh_yaml:
                 data: Dict[str, Dict[str, str]] = yaml.load(fh_yaml, Loader=yaml.FullLoader)
@@ -119,7 +129,7 @@ class SetWinPos:
                 if key == "title":
                     if not isinstance(data_key, str):
                         raise TypeError(f"setlistの値が不正({name},{key})")
-                    # TODO: 未対応
+                    set_title = data_key
                 elif key == "class":
                     if not isinstance(data_key, str):
                         raise TypeError(f"setlistの値が不正({name},{key})")
@@ -131,7 +141,7 @@ class SetWinPos:
                 elif key == "display":
                     if not isinstance(data_key, int):
                         raise TypeError(f"setlistの値が不正({name},{key})")
-                    # TODO: 未対応
+                    set_display = data_key
                 elif key in ["left", "top", "right", "bottom"]:
                     if isinstance(data_key, int):
                         rect[key] = data_key
@@ -172,7 +182,7 @@ class SetWinPos:
 
         # ee = win32print.EnumMonitors(None, 2)
         # print(ee)
-        # # for idx in range(0, 4):
+        # for idx in range(0, 4):
         #     disp0 = win32api.EnumDisplayDevices(None, idx)
         #     print("-----")
         #     print(f"display:{idx}")
@@ -191,13 +201,19 @@ class SetWinPos:
         # self.logger.info("metrics:cx=%d,cy=%d", cx, cy)
 
     def callback_enumwindows(self, hwnd: int, is_set: bool) -> bool:
+        """
+        EnumWindows()用コールバック
+
+        :param hwnd: ウィンドウハンドル
+        :param is_set: ウィンドウ位置のセットフラグ
+        :return: 継続フラグ
+        """
         title: str = win32gui.GetWindowText(hwnd)
         clazz: str = win32gui.GetClassName(hwnd)
         _tid, pid = win32process.GetWindowThreadProcessId(hwnd)
         try:
-            process = win32api.OpenProcess(win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ, False,
-                                           pid)
-        except pywintypes.error:  # noqa
+            process = win32api.OpenProcess(win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ, False, pid)
+        except pywintypes.error:  # noqa # pylint: disable=no-member
             return True
         filename: str = win32process.GetModuleFileNameEx(process, 0)
         win32api.CloseHandle(process)
@@ -208,12 +224,16 @@ class SetWinPos:
             # self.logger.debug("rect1:left=%d,top=%d,right=%d,bottom=%d",
             #                   rect1[0], rect1[1], rect1[2], rect1[3])
             rect2 = windll_dwmapi.DwmGetWindowAttribute(hwnd, windll_dwmapi.DWMWA_EXTENDED_FRAME_BOUNDS)
+            rect2_left = int(str(rect2.left))
+            rect2_top = int(str(rect2.top))
+            rect2_right = int(str(rect2.right))
+            rect2_bottom = int(str(rect2.bottom))
             # self.logger.debug("rect2:left=%d,top=%d,right=%d,bottom=%d",
-            #                   rect2.left, rect2.top, rect2.right, rect2.bottom)
-            margin_left = int(str(rect2.left)) - rect1[0]
-            margin_top = int(str(rect2.top)) - rect1[1]
-            margin_right = rect1[2] - int(str(rect2.right)) + margin_left
-            margin_bottom = rect1[3] - int(str(rect2.bottom)) + margin_top
+            #                   rect2_left, rect2_top, rect2_right, rect2_bottom)
+            margin_left = rect2_left - rect1[0]
+            margin_top = rect2_top - rect1[1]
+            margin_right = rect1[2] - rect2_right + margin_left
+            margin_bottom = rect1[3] - rect2_bottom + margin_top
             dpi = self.display[self.display_primary]["dpi"]
             if dpi % 96 >= 48 and margin_right > 0:
                 # 拡大率が整数でないときの端数調整
@@ -221,6 +241,8 @@ class SetWinPos:
                 margin_bottom = margin_bottom + 1
             if is_set:
                 for name, winset in self.winset.items():
+                    if winset["title"] != "" and winset["title"] not in title:
+                        continue
                     if winset["class"] != "" and clazz != winset["class"]:
                         continue
                     if not filename.endswith("\\" + winset["filename"]):
@@ -232,16 +254,32 @@ class SetWinPos:
                     set_y = winset["top"] - margin_top
                     set_w = winset["right"] - winset["left"] + margin_right
                     set_h = winset["bottom"] - winset["top"] + margin_bottom
+                    if winset["display"] > 0:
+                        set_x += self.display[winset["display"] - 1]["left"]
+                        set_y += self.display[winset["display"] - 1]["top"]
 
                     self.logger.debug(
                         "hwnd=0x%08x,pid=%05d,title=%s,filename=%s", hwnd, pid, title, filename)
-                    self.logger.info("set:0x%08x,x=%4d,y=%4d,w=%4d,h=%4d,%s", hwnd, set_x, set_y, set_w, set_h, name)
+                    self.logger.info("set:hwnd=0x%08x,disp=%d,x=%4d,y=%4d,w=%4d,h=%4d,%s",
+                                     hwnd, winset["display"], set_x, set_y, set_w, set_h, name)
                     win32gui.SetWindowPos(
                         hwnd, 0, set_x, set_y, set_w, set_h, win32con.SWP_NOACTIVATE | win32con.SWP_NOZORDER)
             else:
+                disp_no = 0
+                for idx, disp in enumerate(self.display):  # 左に突き抜ける場合を考慮
+                    if rect2_left < disp["right"]:
+                        disp_no = idx + 1
+                for idx, disp in enumerate(self.display):
+                    if disp["left"] <= rect2_left < disp["right"]:
+                        disp_no = idx + 1
                 self.logger.debug(
-                    "hwnd=0x%08x,pid=%5d,left=%4d,top=%4d,right=%4d,bottom=%4d,title=%s,class=%s,filename=%s",
-                    hwnd, pid, rect2.left, rect2.top, rect2.right, rect2.bottom, title, clazz, filename)
+                    "hwnd=0x%08x,pid=%5d,disp=%d,left=%4d,top=%4d,right=%4d,bottom=%4d,title=%s,class=%s,filename=%s",
+                    hwnd, pid, disp_no,
+                    rect2_left - self.display[disp_no - 1]["left"],
+                    rect2_top - self.display[disp_no - 1]["top"],
+                    rect2_right - self.display[disp_no - 1]["left"] - 1,
+                    rect2_bottom - self.display[disp_no - 1]["top"] - 1,
+                    title, clazz, filename)
 
         return True
 
