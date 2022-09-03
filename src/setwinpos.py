@@ -3,6 +3,7 @@
 import logging.config
 import os
 import re
+import time
 from argparse import ArgumentParser, Namespace
 from logging import Logger
 from typing import List, Dict, Any
@@ -42,6 +43,8 @@ class SetWinPos:
         if arg.mode == "set":
             self.load_setlist()
             self.set_window_pos()
+            time.sleep(1)
+            self.set_window_pos()  # DPIが違う場合のために再実行
 
     @staticmethod
     def argparse() -> Namespace:
