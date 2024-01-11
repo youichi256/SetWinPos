@@ -6,7 +6,7 @@ import re
 import time
 from argparse import ArgumentParser, Namespace
 from logging import Logger
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Union
 
 import pywintypes
 import win32api
@@ -26,6 +26,7 @@ class SetWinPos:
         self.logger = self.init_log()
         self.display_primary = -1
         self.display: List[Dict[str, int]] = []
+        self.foreground: List[str] = []
         self.winset: Dict[str, Dict[str, Any]] = {}
 
     def main(self) -> None:
@@ -45,6 +46,8 @@ class SetWinPos:
             self.set_window_pos()
             time.sleep(1)
             self.set_window_pos()  # DPIが違う場合のために再実行
+            time.sleep(1)
+            self.set_foreground()
 
     @staticmethod
     def argparse() -> Namespace:
@@ -113,13 +116,17 @@ class SetWinPos:
         """
         try:
             with open("conf/setlist.yaml", "r", encoding="utf-8") as fh_yaml:
-                data: Dict[str, Dict[str, str]] = yaml.load(fh_yaml, Loader=yaml.FullLoader)
+                data: Dict[str, Union[Dict[str, str], List[str]]] = yaml.load(fh_yaml, Loader=yaml.FullLoader)
         except FileNotFoundError as err:
             raise err
         if not isinstance(data, dict):
             raise TypeError("setlistの構造が不正(all)")
         for name in data:
             data_name = data[name]
+            if name == "_Foreground" and isinstance(data_name, list):
+                for item in data_name:
+                    self.foreground.append(item)
+                continue
             if not isinstance(data_name, dict):
                 raise TypeError(f"setlistの構造が不正({name})")
             set_title = ""
@@ -252,6 +259,7 @@ class SetWinPos:
                         continue
                     # ss = win32gui.GetWindow(hwnd, win32con.GW_HWNDPREV)
                     # self.logger.info(ss)
+                    winset["hwnd"] = hwnd
 
                     set_x = winset["left"] - margin_left
                     set_y = winset["top"] - margin_top
@@ -285,6 +293,20 @@ class SetWinPos:
                     title, clazz, filename)
 
         return True
+
+    def set_foreground(self) -> None:
+        """
+        フォアグラウンドを設定
+
+        :return: なし
+        """
+        if len(self.foreground) == 0:
+            return
+        hwnd = win32gui.GetForegroundWindow()
+        for name in self.foreground:
+            win32gui.SetForegroundWindow(self.winset[name]["hwnd"])
+            time.sleep(0.2)
+        win32gui.SetForegroundWindow(hwnd)
 
     @staticmethod
     def init_log() -> Logger:
